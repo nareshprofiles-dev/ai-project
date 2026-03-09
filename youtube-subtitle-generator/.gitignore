@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Output files
+output/
+
+# Model cache
+~/.cache/whisper/
+~/.cache/huggingface/

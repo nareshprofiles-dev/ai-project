@@ -1,0 +1,27 @@
+# YouTube audio downloader
+yt-dlp>=2024.1.0
+
+# OpenAI Whisper — local speech-to-text (Telugu transcription)
+openai-whisper>=20231117
+
+# HuggingFace Transformers — MarianMT Telugu→English translation model
+transformers>=4.38.0
+
+# PyTorch — required by both Whisper and Transformers
+# Install the CPU-only build to keep size manageable:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+# Or install the full GPU build:
+#   pip install torch
+torch>=2.0.0
+
+# SRT subtitle file builder
+srt>=3.5.3
+
+# ffmpeg Python bindings (wraps the ffmpeg binary)
+ffmpeg-python>=0.2.0
+
+# Sentencepiece — required by MarianMT tokenizer
+sentencepiece>=0.1.99
+
+# NumPy — required by Whisper
+numpy>=1.24.0
