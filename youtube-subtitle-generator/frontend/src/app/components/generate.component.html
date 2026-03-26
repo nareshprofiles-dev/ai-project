@@ -1,0 +1,38 @@
+<div class="page">
+  <div class="card">
+    <h1 class="title">Telugu to English Subtitle Generator</h1>
+    <p class="subtitle">
+      Paste a YouTube URL and generate an English SRT file using Whisper.
+    </p>
+
+    <div>
+      <label for="url">YouTube URL</label>
+      <input id="url" type="text" [(ngModel)]="url" placeholder="https://youtu.be/..." />
+    </div>
+
+    <div class="row" style="margin-top: 16px;">
+      <div>
+        <label for="model">Whisper model</label>
+        <select id="model" [(ngModel)]="model">
+          <option *ngFor="let m of models" [value]="m">{{ m }}</option>
+        </select>
+      </div>
+      <div>
+        <label for="output">Output folder</label>
+        <input id="output" type="text" [(ngModel)]="outputDir" />
+      </div>
+    </div>
+
+    <div class="actions">
+      <button (click)="generate()" [disabled]="isLoading">
+        {{ isLoading ? "Working..." : "Generate subtitles" }}
+      </button>
+    </div>
+
+    <div class="status" *ngIf="isLoading || store.statusMessage">
+      {{ store.statusMessage }}
+    </div>
+
+    <div class="error" *ngIf="error">{{ error }}</div>
+  </div>
+</div>

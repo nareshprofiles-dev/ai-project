@@ -1,0 +1,9 @@
+.srt-preview {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 16px;
+  border-radius: 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+  margin: 8px 0 0;
+}

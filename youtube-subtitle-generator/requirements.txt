@@ -25,3 +25,7 @@ sentencepiece>=0.1.99
 
 # NumPy — required by Whisper
 numpy>=1.24.0
+
+# Django API backend
+Django>=4.2.0
+django-cors-headers>=4.3.0

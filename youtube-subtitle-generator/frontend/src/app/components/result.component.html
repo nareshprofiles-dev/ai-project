@@ -1,0 +1,24 @@
+<div class="page">
+  <div class="card">
+    <h1 class="title">Subtitle Output</h1>
+    <p class="subtitle">
+      Generated SRT content is shown below. You can copy it or open the file path.
+    </p>
+
+    <div *ngIf="!store.srtContent">
+      <p class="error">No subtitle data found. Please generate subtitles first.</p>
+    </div>
+
+    <div *ngIf="store.srtContent">
+      <label>SRT output path</label>
+      <input type="text" [value]="store.srtPath" readonly />
+
+      <label style="margin-top: 16px;">Formatted output</label>
+      <pre class="srt-preview">{{ store.srtContent }}</pre>
+    </div>
+
+    <div class="actions" style="margin-top: 16px;">
+      <button (click)="back()">Generate another</button>
+    </div>
+  </div>
+</div>
