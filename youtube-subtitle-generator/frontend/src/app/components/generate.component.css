@@ -1,1 +1,6 @@
 /* Component-specific styles (global styles live in styles.css) */
+
+.actions {
+  display: flex;
+  margin-top: 20px;
+}

@@ -5,8 +5,10 @@ Translates Telugu transcription segments to English using Whisper's built-in
 translation task — no separate model download required.
 
 Whisper's `task="translate"` runs the already-downloaded model a second time
-on the audio file and returns English text with matching segment timestamps.
-We align the English segments with the original Telugu segments by index.
+on the audio file and returns English text with segment timestamps.
+When the translate pass produces richer segmentation than the transcription
+pass, we prefer the translated segments directly so the final SRT keeps all
+available subtitle cues.
 """
 
 from typing import List, Dict, Any
@@ -23,8 +25,10 @@ def translate_segments(
     Translate Telugu segments to English using Whisper's translate task.
 
     Whisper is re-run on the same audio file with task="translate", which
-    produces English text for each segment. We match results to the original
-    Telugu segments by index and add an "english_text" key to each.
+    produces English text for each segment. If that translate pass yields
+    enough segments, those translated segments become the subtitle source.
+    Otherwise we fall back to aligning translated text onto the original
+    transcription segments by index.
 
     Args:
         segments:   List of segment dicts from transcription_service, each with
@@ -33,7 +37,8 @@ def translate_segments(
         model_name: Whisper model size to reuse (must match transcription model).
 
     Returns:
-        The same list with "english_text" added to each segment.
+        A segment list ready for SRT generation, each containing timestamps and
+        an "english_text" field.
 
     Raises:
         RuntimeError: If Whisper translation fails.
@@ -63,19 +68,32 @@ def translate_segments(
     except Exception as exc:
         raise RuntimeError(f"Whisper translation pass failed: {exc}") from exc
 
-    # Build a list of English segments from Whisper's translate output
-    english_segments = [
-        seg["text"].strip()
-        for seg in result.get("segments", [])
-        if seg["text"].strip()
-    ]
+    translated_segments = []
+    for index, seg in enumerate(result.get("segments", [])):
+        english_text = seg.get("text", "").strip()
+        if not english_text:
+            continue
 
-    print(f"[Translation] Received {len(english_segments)} English segment(s).")
+        translated_segments.append(
+            {
+                "id": int(seg.get("id", index)),
+                "start": float(seg["start"]),
+                "end": float(seg["end"]),
+                "text": segments[index]["text"] if index < len(segments) else "",
+                "english_text": english_text,
+            }
+        )
+
+    print(f"[Translation] Received {len(translated_segments)} English segment(s).")
+
+    if len(translated_segments) >= len(segments):
+        print("[Translation] Using translated segment timestamps directly.")
+        return translated_segments
 
     # Align English text to Telugu segments by index (best-effort)
     for i, seg in enumerate(segments):
-        if i < len(english_segments):
-            seg["english_text"] = english_segments[i]
+        if i < len(translated_segments):
+            seg["english_text"] = translated_segments[i]["english_text"]
         else:
             # Fallback: keep Telugu text if no matching English segment
             seg["english_text"] = seg.get("text", "")

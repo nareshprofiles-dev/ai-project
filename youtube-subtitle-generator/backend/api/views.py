@@ -1,7 +1,10 @@
 import json
 import os
 import sys
+import hashlib
+import wave
 from pathlib import Path
+from typing import Any
 
 from django.http import JsonResponse, HttpRequest
 from django.views.decorators.csrf import csrf_exempt
@@ -20,6 +23,11 @@ from app.services.translation_service import translate_segments
 from app.services.subtitle_generator import generate_srt
 
 
+REQUEST_CACHE_FILENAME = "request_cache.json"
+TRANSCRIPTION_CACHE_FILENAME = "transcription_segments.json"
+CACHE_DIRNAME = "cache"
+
+
 def _parse_json(request: HttpRequest) -> dict:
     if not request.body:
         return {}
@@ -27,6 +35,214 @@ def _parse_json(request: HttpRequest) -> dict:
         return json.loads(request.body.decode("utf-8"))
     except json.JSONDecodeError:
         return {}
+
+
+def _request_cache_path(output_dir: str) -> str:
+    return os.path.join(output_dir, REQUEST_CACHE_FILENAME)
+
+
+def _transcription_cache_path(output_dir: str) -> str:
+    return os.path.join(output_dir, TRANSCRIPTION_CACHE_FILENAME)
+
+
+def _request_signature(youtube_url: str, model_name: str) -> dict[str, str]:
+    return {
+        "url": youtube_url,
+        "model": model_name,
+    }
+
+
+def _cache_root_dir() -> str:
+    return str(PROJECT_ROOT / CACHE_DIRNAME)
+
+
+def _cache_key(youtube_url: str, model_name: str) -> str:
+    raw = f"{youtube_url.strip()}::{model_name.strip()}".encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:16]
+
+
+def _cache_dir(youtube_url: str, model_name: str) -> str:
+    return os.path.join(_cache_root_dir(), _cache_key(youtube_url, model_name))
+
+
+def _read_json_file(path: str) -> dict[str, Any] | list[Any] | None:
+    if not os.path.exists(path):
+        return None
+
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _get_wav_duration_seconds(wav_path: str) -> float:
+    try:
+        with wave.open(wav_path, "rb") as wav_file:
+            frame_count = wav_file.getnframes()
+            frame_rate = wav_file.getframerate()
+            if frame_rate <= 0:
+                return 0.0
+            return frame_count / float(frame_rate)
+    except (OSError, wave.Error):
+        return 0.0
+
+
+def _write_json_file(path: str, payload: dict[str, Any] | list[Any]) -> None:
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, ensure_ascii=False, indent=2)
+
+
+def _load_cached_wav_path(
+    youtube_url: str,
+    model_name: str,
+    cache_dir: str,
+) -> str | None:
+    cache_data = _read_json_file(_request_cache_path(cache_dir))
+    if not isinstance(cache_data, dict):
+        return None
+
+    if cache_data.get("request") != _request_signature(youtube_url, model_name):
+        return None
+
+    wav_path = cache_data.get("wav_path", "")
+    if isinstance(wav_path, str) and wav_path and os.path.exists(wav_path):
+        print(f"[Cache] Reusing downloaded audio: {wav_path}")
+        return wav_path
+
+    return None
+
+
+def _load_request_cache(
+    youtube_url: str,
+    model_name: str,
+    cache_dir: str,
+) -> dict[str, Any] | None:
+    cache_data = _read_json_file(_request_cache_path(cache_dir))
+    if not isinstance(cache_data, dict):
+        return None
+
+    if cache_data.get("request") != _request_signature(youtube_url, model_name):
+        return None
+
+    return cache_data
+
+
+def _load_cached_segments(
+    youtube_url: str,
+    model_name: str,
+    cache_dir: str,
+) -> list[dict[str, Any]] | None:
+    cache_data = _read_json_file(_request_cache_path(cache_dir))
+    if not isinstance(cache_data, dict):
+        return None
+
+    if cache_data.get("request") != _request_signature(youtube_url, model_name):
+        return None
+
+    segments_data = _read_json_file(_transcription_cache_path(cache_dir))
+    if not isinstance(segments_data, list):
+        return None
+
+    cleaned_segments = []
+    for seg in segments_data:
+        if not isinstance(seg, dict):
+            continue
+        try:
+            cleaned_segments.append(
+                {
+                    "id": int(seg["id"]),
+                    "start": float(seg["start"]),
+                    "end": float(seg["end"]),
+                    "text": str(seg["text"]).strip(),
+                }
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+
+    if cleaned_segments:
+        print(f"[Cache] Reusing cached transcription with {len(cleaned_segments)} segment(s).")
+        return cleaned_segments
+
+    return None
+
+
+def _segments_cover_audio(segments: list[dict[str, Any]], wav_path: str) -> bool:
+    if not segments:
+        return False
+
+    duration_seconds = _get_wav_duration_seconds(wav_path)
+    if duration_seconds <= 0:
+        return True
+
+    last_end = max(float(seg.get("end", 0.0)) for seg in segments)
+    minimum_expected_end = max(duration_seconds - 3.0, duration_seconds * 0.9)
+    return last_end >= minimum_expected_end
+
+
+def _save_request_cache(
+    youtube_url: str,
+    model_name: str,
+    cache_dir: str,
+    wav_path: str,
+    segments: list[dict[str, Any]] | None = None,
+) -> None:
+    payload = {
+        "request": _request_signature(youtube_url, model_name),
+        "wav_path": wav_path,
+    }
+
+    _write_json_file(
+        _request_cache_path(cache_dir),
+        payload,
+    )
+
+    if segments is not None:
+        _write_json_file(_transcription_cache_path(cache_dir), segments)
+        print(f"[Cache] Saved transcription cache with {len(segments)} segment(s).")
+
+    print(f"[Cache] Saved request cache for: {youtube_url}")
+
+
+def _get_or_create_transcription(
+    youtube_url: str,
+    model_name: str,
+    cache_dir: str,
+) -> tuple[str, list[dict[str, Any]]]:
+    wav_path = _load_cached_wav_path(youtube_url, model_name, cache_dir)
+    if wav_path is None:
+        wav_path = download_audio(youtube_url, output_dir=cache_dir)
+        _save_request_cache(
+            youtube_url=youtube_url,
+            model_name=model_name,
+            cache_dir=cache_dir,
+            wav_path=wav_path,
+        )
+
+    segments = _load_cached_segments(youtube_url, model_name, cache_dir)
+    if segments is not None and not _segments_cover_audio(segments, wav_path):
+        print("[Cache] Cached transcription looks incomplete for this audio. Re-transcribing...")
+        segments = None
+
+    if segments is None:
+        segments = transcribe_audio(wav_path, model_name=model_name)
+        if segments and not _segments_cover_audio(segments, wav_path):
+            print("[Transcription] Initial transcription looks incomplete. Retrying once...")
+            segments = transcribe_audio(wav_path, model_name=model_name)
+        if segments:
+            _save_request_cache(
+                youtube_url=youtube_url,
+                model_name=model_name,
+                cache_dir=cache_dir,
+                wav_path=wav_path,
+                segments=segments,
+            )
+
+    return wav_path, segments
 
 
 @require_http_methods(["GET"])
@@ -49,13 +265,29 @@ def generate_subtitles(request: HttpRequest) -> JsonResponse:
     if not os.path.isabs(output_dir):
         output_dir = str(PROJECT_ROOT / output_dir)
 
+    cache_dir = _cache_dir(youtube_url, model_name)
+
     try:
-        wav_path = download_audio(youtube_url, output_dir=output_dir)
-        segments = transcribe_audio(wav_path, model_name=model_name)
-        if not segments:
+        wav_path, transcription_segments = _get_or_create_transcription(
+            youtube_url=youtube_url,
+            model_name=model_name,
+            cache_dir=cache_dir,
+        )
+        if not transcription_segments:
             return JsonResponse({"error": "No transcription segments produced."}, status=400)
-        segments = translate_segments(segments, wav_path=wav_path, model_name=model_name)
-        srt_path = generate_srt(segments, output_dir=output_dir)
+        translated_segments = translate_segments(
+            transcription_segments,
+            wav_path=wav_path,
+            model_name=model_name,
+        )
+        srt_path = generate_srt(translated_segments, output_dir=output_dir)
+        _save_request_cache(
+            youtube_url=youtube_url,
+            model_name=model_name,
+            cache_dir=cache_dir,
+            wav_path=wav_path,
+            segments=transcription_segments,
+        )
     except Exception as exc:
         return JsonResponse({"error": str(exc)}, status=500)
 

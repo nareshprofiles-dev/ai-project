@@ -6,6 +6,7 @@ A fully local, free, and open-source pipeline that:
 2. Transcribes the Telugu speech to text with **OpenAI Whisper**
 3. Translates the text to English using a **HuggingFace MarianMT** model
 4. Writes an **SRT subtitle file** to the `output/` folder
+5. Stores reusable audio and transcription cache under `cache/`
 
 No paid APIs. Everything runs on your machine.
 
@@ -95,6 +96,13 @@ pip install torch --index-url https://download.pytorch.org/whl/cpu
 ```bash
 python app/main.py "https://youtube.com/watch?v=VIDEO_ID"
 ```
+
+## Cache Behavior
+
+- Final subtitle files are written to `output/`.
+- Downloaded audio and cached transcription data are stored under `cache/`.
+- Delete `cache/` whenever you want the next run to start fully from scratch.
+- Delete `output/` only when you want to remove generated subtitle files.
 
 ### Options
 

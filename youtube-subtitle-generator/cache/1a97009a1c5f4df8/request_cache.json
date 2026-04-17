@@ -1,0 +1,7 @@
+{
+  "request": {
+    "url": "https://www.youtube.com/watch?v=5bnFijQ64rc",
+    "model": "medium"
+  },
+  "wav_path": "C:\\Users\\NareshParasa\\ai-project\\youtube-subtitle-generator\\cache\\1a97009a1c5f4df8\\audio.wav"
+}

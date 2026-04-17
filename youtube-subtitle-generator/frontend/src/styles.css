@@ -9,6 +9,13 @@ body {
   color: #1c2330;
 }
 
+vite-error-overlay,
+#webpack-dev-server-client-overlay,
+#webpack-dev-server-client-overlay-div,
+iframe#webpack-dev-server-client-overlay {
+  display: none !important;
+}
+
 .page {
   min-height: 100vh;
   display: flex;
