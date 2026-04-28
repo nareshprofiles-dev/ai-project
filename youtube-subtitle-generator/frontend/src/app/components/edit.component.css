@@ -1,0 +1,43 @@
+.segments {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.segment {
+  border: 1px solid #dbe4ff;
+  border-radius: 12px;
+  padding: 16px;
+  background: #f8fbff;
+}
+
+.segment-meta {
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 8px;
+  letter-spacing: 0.02em;
+}
+
+.segment textarea {
+  min-height: 144px;
+  line-height: 2;
+  font-size: 22px;
+  font-weight: 500;
+  font-family: "Noto Sans Telugu", "Hind Guntur", "Nirmala UI", "Gautami", "Vani", sans-serif;
+  letter-spacing: 0;
+  text-rendering: optimizeLegibility;
+  font-kerning: normal;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.secondary {
+  background: #475569;
+}

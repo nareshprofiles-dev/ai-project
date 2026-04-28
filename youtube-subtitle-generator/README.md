@@ -33,6 +33,12 @@ youtube-subtitle-generator/
 
 ---
 
+## Additional Docs
+
+- `architecture.md` describes the planned hybrid human-in-the-loop review flow, including parallel transcription/translation, side-by-side review, and sentence-level retranslation.
+
+---
+
 ## Prerequisites
 
 | Tool | Purpose | Install |

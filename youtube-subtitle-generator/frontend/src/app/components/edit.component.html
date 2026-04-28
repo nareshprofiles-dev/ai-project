@@ -1,0 +1,34 @@
+<div class="page">
+  <div class="card">
+    <h1 class="title">Review Telugu Transcription</h1>
+    <p class="subtitle">
+      Review the Telugu text below, edit it if needed, and continue to generate the final subtitles.
+    </p>
+
+    <div *ngIf="!store.segments.length">
+      <p class="error">No Telugu transcription found. Please go back and generate it first.</p>
+    </div>
+
+    <div class="segments" *ngIf="store.segments.length">
+      <div class="segment" *ngFor="let segment of store.segments; index as i">
+        <div class="segment-meta">
+          Sentence {{ i + 1 }} | {{ formatTimestamp(segment.start) }} to {{ formatTimestamp(segment.end) }}
+        </div>
+        <textarea [(ngModel)]="segment.text" lang="te" spellcheck="false"></textarea>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="secondary" (click)="back()" [disabled]="isLoading">Back</button>
+      <button (click)="continueToSubtitles()" [disabled]="isLoading || !store.segments.length">
+        {{ isLoading ? "Working..." : "Continue" }}
+      </button>
+    </div>
+
+    <div class="status" *ngIf="isLoading || store.statusMessage">
+      {{ store.statusMessage }}
+    </div>
+
+    <div class="error" *ngIf="error">{{ error }}</div>
+  </div>
+</div>

@@ -7,8 +7,7 @@ import { SubtitleStoreService } from "../subtitle-store.service";
 
 
 type SubtitleResponse = {
-  srt_path: string;
-  srt_content: string;
+  segments: Array<{ id: number; start: number; end: number; text: string }>;
   error?: string;
 };
 
@@ -22,7 +21,7 @@ type SubtitleResponse = {
 })
 export class GenerateComponent {
   url = "";
-  model = "medium";
+  model = "large-v3";
   outputDir = "output";
   isLoading = false;
   error = "";
@@ -44,10 +43,10 @@ export class GenerateComponent {
     }
 
     this.isLoading = true;
-    this.store.setStatus("Generating subtitles. This can take a few minutes...");
+    this.store.setStatus("Transcribing Telugu audio. This can take a few minutes...");
 
     try {
-      const response = await fetch("http://localhost:8000/api/subtitles/", {
+      const response = await fetch("http://localhost:8000/api/transcribe/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -66,9 +65,10 @@ export class GenerateComponent {
         return;
       }
 
-      this.store.setResult(data.srt_path, data.srt_content);
-      this.store.setStatus("Done. Opening results...");
-      await this.router.navigateByUrl("/result");
+      this.store.setRequest(this.url.trim(), this.model, this.outputDir.trim() || "output");
+      this.store.setSegments(data.segments || []);
+      this.store.setStatus("Transcription ready. Review Telugu text and continue.");
+      await this.router.navigateByUrl("/edit");
     } catch (err: unknown) {
       this.error = err instanceof Error ? err.message : "Unexpected error.";
       this.store.setStatus("");
