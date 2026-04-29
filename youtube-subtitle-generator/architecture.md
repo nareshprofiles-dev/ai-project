@@ -6,7 +6,7 @@ Improve the human-in-the-loop review flow by keeping the current project structu
 
 The main product goal is:
 
-- run Telugu transcription and English translation in parallel
+- run Telugu transcription first, then English translation after transcription finishes
 - show both results together on the review page
 - let the user edit either side
 - if Telugu text is modified, regenerate English only for that sentence
@@ -47,7 +47,8 @@ The proposed architecture keeps the existing backend services, but changes the o
 - translation quality is treated as the stronger signal
 - transcription is still valuable as draft Telugu text for review
 - review should happen on a single sentence-aligned table
-- transcribe and translate should run in parallel after audio is ready
+- transcribe and translate should run one after the other to keep memory usage predictable
+- long-running jobs should emit clear progress and error logs at each stage
 - edits should be local to a sentence, not force a full rerun
 
 
@@ -62,20 +63,34 @@ The backend still downloads audio once and caches:
 
 This behavior already exists and should remain.
 
-### 2. Run transcribe and translate in parallel
+### 2. Run transcribe and translate sequentially
 
-After audio is prepared, launch both jobs in parallel:
+After audio is prepared, run each expensive job one after the other:
 
-- `transcribe_audio(wav_path, model_name)`
-- translation pass on the same `wav_path`
+1. run Telugu transcription with `transcribe_audio(wav_path, model_name)`
+2. write transcription segments to cache
+3. release any transcription model resources if the runtime supports it
+4. run English translation on the same `wav_path`
+5. write translation segments to cache
 
-The translation pass should not wait for the transcription pass to finish.
+The translation pass should start only after the transcription pass completes.
 
-This is the key orchestration change from the current implementation.
+This is the key orchestration change from the earlier parallel design. The goal is to reduce peak memory usage and make failures easier to isolate.
+
+Each stage should log:
+
+- request/job id
+- stage name
+- input audio path
+- selected model
+- start time and finish time
+- segment count produced
+- cache file written
+- full exception details on failure
 
 ### 3. Build a unified review model
 
-When both jobs finish, merge them into one review list.
+When both jobs finish sequentially, merge them into one review list.
 
 Each review row should contain:
 
@@ -155,7 +170,7 @@ That means:
 
 ### Telugu alignment onto translation timeline
 
-Because transcription and translation may produce different segment counts, alignment should be a separate step.
+Because transcription and translation may produce different segment counts, alignment should be a separate step. The jobs run sequentially, but their outputs are still aligned after both stages finish.
 
 Recommended merge strategy:
 
@@ -182,7 +197,8 @@ The main changes belong in `backend/api/views.py` or a new orchestration service
 Suggested responsibilities:
 
 - prepare/reuse cached audio
-- run transcription and translation in parallel
+- run transcription and translation sequentially
+- log progress, cache writes, segment counts, and failures for each stage
 - align both outputs into review rows
 - cache review rows
 - support sentence-level retranslation
@@ -222,7 +238,10 @@ Input:
 Behavior:
 
 - prepare audio
-- run transcribe and translate in parallel
+- run Telugu transcription
+- cache transcription segments
+- run English translation
+- cache translation segments
 - align results
 - return unified review rows
 
@@ -409,7 +428,8 @@ This design is aligned with the current implementation because:
 - it keeps the existing Django + Angular structure
 - it reuses the current transcription and translation services
 - it preserves the current idea of a review page before final SRT generation
-- it adds parallelism and better review modeling without requiring a full rewrite
+- it adds better review modeling without requiring a full rewrite
+- it avoids peak memory pressure from running transcription and translation at the same time
 
 It also solves the core product concern:
 
@@ -421,12 +441,13 @@ It also solves the core product concern:
 ## Recommended Implementation Order
 
 1. Add backend orchestration endpoint that returns merged review rows
-2. Run transcription and translation in parallel
-3. Add translation result caching
-4. Change frontend store from `segments` to `reviewRows`
-5. Redesign page 2 to show Telugu and English side by side
-6. Add per-row regenerate action
-7. Finalize SRT from reviewed rows
+2. Run transcription and translation sequentially
+3. Add detailed stage logging for transcription, translation, caching, and alignment
+4. Add translation result caching
+5. Change frontend store from `segments` to `reviewRows`
+6. Redesign page 2 to show Telugu and English side by side
+7. Add per-row regenerate action
+8. Finalize SRT from reviewed rows
 
 
 ## Non-Goals For The First Iteration
@@ -445,7 +466,7 @@ These can come later if needed.
 
 Use a hybrid review architecture where:
 
-- transcription and translation run in parallel
+- transcription and translation run sequentially to control memory usage
 - translation defines the canonical review timeline
 - the review page shows Telugu and English side by side
 - Telugu edits trigger sentence-level retranslation only for that row
