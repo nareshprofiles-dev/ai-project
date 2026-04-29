@@ -1,27 +1,67 @@
 <div class="page">
-  <div class="card">
-    <h1 class="title">Review Telugu Transcription</h1>
+  <div class="card review-card">
+    <h1 class="title">Review &amp; Edit Subtitles</h1>
     <p class="subtitle">
-      Review the Telugu text below, edit it if needed, and continue to generate the final subtitles.
+      Review Telugu and English text side by side. Edit either column — if you change Telugu text,
+      click <strong>Regen</strong> to update only that row's English translation.
     </p>
 
-    <div *ngIf="!store.segments.length">
-      <p class="error">No Telugu transcription found. Please go back and generate it first.</p>
+    <div *ngIf="!store.reviewRows.length">
+      <p class="error">No subtitle data found. Please go back and generate subtitles first.</p>
     </div>
 
-    <div class="segments" *ngIf="store.segments.length">
-      <div class="segment" *ngFor="let segment of store.segments; index as i">
-        <div class="segment-meta">
-          Sentence {{ i + 1 }} | {{ formatTimestamp(segment.start) }} to {{ formatTimestamp(segment.end) }}
+    <div class="review-table" *ngIf="store.reviewRows.length">
+      <div class="review-header">
+        <div class="col-meta"></div>
+        <div class="col-telugu">Telugu</div>
+        <div class="col-english">English</div>
+        <div class="col-action"></div>
+      </div>
+
+      <div
+        class="review-row"
+        [class.row-edited]="row.edited"
+        *ngFor="let row of store.reviewRows; index as i"
+      >
+        <div class="col-meta">
+          <span class="row-num">{{ i + 1 }}</span>
+          <span class="timestamp">{{ formatTimestamp(row.start) }} &rarr; {{ formatTimestamp(row.end) }}</span>
         </div>
-        <textarea [(ngModel)]="segment.text" lang="te" spellcheck="false"></textarea>
+
+        <div class="col-telugu">
+          <textarea
+            [(ngModel)]="row.teluguCurrent"
+            (ngModelChange)="onTeluguEdit(row)"
+            lang="te"
+            spellcheck="false"
+          ></textarea>
+        </div>
+
+        <div class="col-english">
+          <textarea
+            [(ngModel)]="row.englishCurrent"
+            spellcheck="false"
+            [class.retranslating]="retranslatingId === row.id"
+          ></textarea>
+        </div>
+
+        <div class="col-action">
+          <button
+            class="regen-btn"
+            (click)="retranslate(row)"
+            [disabled]="retranslatingId === row.id || !row.needsRetranslate"
+            title="Regenerate English translation for this row"
+          >
+            {{ retranslatingId === row.id ? "..." : "Regen" }}
+          </button>
+        </div>
       </div>
     </div>
 
     <div class="actions">
       <button class="secondary" (click)="back()" [disabled]="isLoading">Back</button>
-      <button (click)="continueToSubtitles()" [disabled]="isLoading || !store.segments.length">
-        {{ isLoading ? "Working..." : "Continue" }}
+      <button (click)="finalize()" [disabled]="isLoading || !store.reviewRows.length">
+        {{ isLoading ? "Working..." : "Finalize subtitles" }}
       </button>
     </div>
 

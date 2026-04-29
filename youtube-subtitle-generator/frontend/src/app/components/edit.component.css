@@ -1,36 +1,134 @@
-.segments {
-  display: grid;
-  gap: 16px;
+/* Expand the card to accommodate two columns */
+.review-card {
+  max-width: 1200px !important;
+}
+
+/* -------------------------------------------------------
+   Two-column review table
+   Columns: [meta 140px] [Telugu 1fr] [English 1fr] [action 72px]
+------------------------------------------------------- */
+
+.review-table {
   margin-top: 20px;
-}
-
-.segment {
   border: 1px solid #dbe4ff;
-  border-radius: 12px;
-  padding: 16px;
-  background: #f8fbff;
+  border-radius: 10px;
+  overflow: hidden;
 }
 
-.segment-meta {
-  font-size: 13px;
-  font-weight: 600;
+.review-header,
+.review-row {
+  display: grid;
+  grid-template-columns: 140px 1fr 1fr 72px;
+  gap: 0;
+}
+
+.review-header {
+  background: #e8edf8;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
   color: #475569;
-  margin-bottom: 8px;
-  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
-.segment textarea {
-  min-height: 144px;
-  line-height: 2;
-  font-size: 22px;
+.review-header > div {
+  padding: 0 8px;
+}
+
+.review-row {
+  border-top: 1px solid #e2e8f0;
+  background: #f8fbff;
+  align-items: stretch;
+}
+
+.review-row:first-of-type {
+  border-top: none;
+}
+
+.review-row.row-edited {
+  background: #fffbeb;
+  border-left: 3px solid #f59e0b;
+}
+
+/* ---- meta column ---- */
+
+.col-meta {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 10px 12px;
+  border-right: 1px solid #e2e8f0;
+}
+
+.row-num {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.timestamp {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+/* ---- Telugu / English columns ---- */
+
+.col-telugu,
+.col-english {
+  padding: 8px;
+  border-right: 1px solid #e2e8f0;
+}
+
+.col-telugu textarea {
+  min-height: 80px;
+  font-size: 18px;
   font-weight: 500;
   font-family: "Noto Sans Telugu", "Hind Guntur", "Nirmala UI", "Gautami", "Vani", sans-serif;
+  line-height: 1.9;
   letter-spacing: 0;
   text-rendering: optimizeLegibility;
-  font-kerning: normal;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
+
+.col-english textarea {
+  min-height: 80px;
+  font-size: 14px;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  line-height: 1.6;
+}
+
+textarea.retranslating {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* ---- action column ---- */
+
+.col-action {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 10px 6px;
+}
+
+.regen-btn {
+  background: #3b82f6;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 8px;
+  border-radius: 6px;
+  width: 100%;
+  white-space: nowrap;
+}
+
+.regen-btn[disabled] {
+  background: #cbd5e1;
+  cursor: not-allowed;
+}
+
+/* ---- bottom actions bar ---- */
 
 .actions {
   display: flex;

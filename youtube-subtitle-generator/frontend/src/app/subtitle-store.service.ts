@@ -1,10 +1,15 @@
 import { Injectable } from "@angular/core";
 
-export type SubtitleSegment = {
+export type ReviewRow = {
   id: number;
   start: number;
   end: number;
-  text: string;
+  teluguOriginal: string;
+  teluguCurrent: string;
+  englishOriginal: string;
+  englishCurrent: string;
+  edited: boolean;
+  needsRetranslate: boolean;
 };
 
 
@@ -13,7 +18,7 @@ export class SubtitleStoreService {
   url = "";
   model = "large-v3";
   outputDir = "output";
-  segments: SubtitleSegment[] = [];
+  reviewRows: ReviewRow[] = [];
   srtPath = "";
   srtContent = "";
   statusMessage = "";
@@ -28,8 +33,8 @@ export class SubtitleStoreService {
     this.outputDir = outputDir;
   }
 
-  setSegments(segments: SubtitleSegment[]): void {
-    this.segments = segments.map((segment) => ({ ...segment }));
+  setReviewRows(rows: ReviewRow[]): void {
+    this.reviewRows = rows.map((r) => ({ ...r }));
   }
 
   setResult(srtPath: string, srtContent: string): void {
@@ -41,7 +46,7 @@ export class SubtitleStoreService {
     this.url = "";
     this.model = "large-v3";
     this.outputDir = "output";
-    this.segments = [];
+    this.reviewRows = [];
     this.srtPath = "";
     this.srtContent = "";
     this.statusMessage = "";

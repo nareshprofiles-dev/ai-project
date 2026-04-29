@@ -6,8 +6,21 @@ import { Router } from "@angular/router";
 import { SubtitleStoreService } from "../subtitle-store.service";
 
 
-type SubtitleResponse = {
-  segments: Array<{ id: number; start: number; end: number; text: string }>;
+type ReviewUnitRow = {
+  id: number;
+  start: number;
+  end: number;
+  telugu_original: string;
+  telugu_current: string;
+  english_original: string;
+  english_current: string;
+  source_timeline: string;
+  edited: boolean;
+  needs_retranslate: boolean;
+};
+
+type ReviewUnitsResponse = {
+  rows: ReviewUnitRow[];
   error?: string;
 };
 
@@ -43,14 +56,14 @@ export class GenerateComponent {
     }
 
     this.isLoading = true;
-    this.store.setStatus("Transcribing Telugu audio. This can take a few minutes...");
+    this.store.setStatus(
+      "Transcribing and translating Telugu audio. This may take several minutes..."
+    );
 
     try {
-      const response = await fetch("http://localhost:8000/api/transcribe/", {
+      const response = await fetch("http://localhost:8000/api/review-units/", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           url: this.url.trim(),
           model: this.model,
@@ -58,16 +71,28 @@ export class GenerateComponent {
         }),
       });
 
-      const data = (await response.json()) as SubtitleResponse;
+      const data = (await response.json()) as ReviewUnitsResponse;
       if (!response.ok) {
-        this.error = data.error || "Failed to generate subtitles.";
+        this.error = data.error || "Failed to generate review units.";
         this.store.setStatus("");
         return;
       }
 
       this.store.setRequest(this.url.trim(), this.model, this.outputDir.trim() || "output");
-      this.store.setSegments(data.segments || []);
-      this.store.setStatus("Transcription ready. Review Telugu text and continue.");
+      this.store.setReviewRows(
+        (data.rows || []).map((r) => ({
+          id: r.id,
+          start: r.start,
+          end: r.end,
+          teluguOriginal: r.telugu_original,
+          teluguCurrent: r.telugu_current,
+          englishOriginal: r.english_original,
+          englishCurrent: r.english_current,
+          edited: r.edited,
+          needsRetranslate: r.needs_retranslate,
+        }))
+      );
+      this.store.setStatus("Review ready. Edit either side, then finalize.");
       await this.router.navigateByUrl("/edit");
     } catch (err: unknown) {
       this.error = err instanceof Error ? err.message : "Unexpected error.";
