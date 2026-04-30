@@ -1,4 +1,4 @@
-import { Component } from "@angular/core";
+import { ChangeDetectorRef, Component } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { NgFor, NgIf } from "@angular/common";
 import { Router } from "@angular/router";
@@ -33,7 +33,8 @@ export class EditComponent {
 
   constructor(
     public readonly store: SubtitleStoreService,
-    private readonly router: Router
+    private readonly router: Router,
+    private readonly cdr: ChangeDetectorRef,
   ) {}
 
   onTeluguEdit(row: ReviewRow): void {
@@ -69,6 +70,7 @@ export class EditComponent {
       this.error = err instanceof Error ? err.message : "Unexpected error during retranslation.";
     } finally {
       this.retranslatingId = null;
+      this.cdr.detectChanges();
     }
   }
 
