@@ -13,6 +13,18 @@ from typing import Any, Dict, List
 
 import whisper
 
+from app.config import (
+    WHISPER_BEAM_SIZE,
+    WHISPER_BEST_OF,
+    WHISPER_COMPRESSION_RATIO_THRESHOLD,
+    WHISPER_DEFAULT_MODEL,
+    WHISPER_FALLBACK_MODEL,
+    WHISPER_FP16,
+    WHISPER_LANGUAGE,
+    WHISPER_LOGPROB_THRESHOLD,
+    WHISPER_NO_SPEECH_THRESHOLD,
+    WHISPER_TEMPERATURE,
+)
 from app.services.segment_utils import (
     normalize_segment_text,
     split_segments_by_sentence,
@@ -20,7 +32,6 @@ from app.services.segment_utils import (
 )
 
 
-DEFAULT_MODEL = "large-v3"
 TELUGU_INITIAL_PROMPT = (
     "ఇది తెలుగు ఆడియో. స్పష్టమైన తెలుగు పదాలు, వాక్యాలు, విరామ చిహ్నాలతో ఖచ్చితంగా లిప్యంతరీకరణ చేయండి."
 )
@@ -40,19 +51,19 @@ def _run_transcription(model_name: str, wav_path: str) -> dict[str, Any]:
     try:
         return model.transcribe(
             wav_path,
-            language="te",
+            language=WHISPER_LANGUAGE,
             task="transcribe",
             verbose=False,
             word_timestamps=True,
             condition_on_previous_text=False,
-            temperature=0.0,
-            beam_size=None,
-            best_of=None,
-            compression_ratio_threshold=1.8,
-            logprob_threshold=-1.0,
-            no_speech_threshold=0.3,
+            temperature=WHISPER_TEMPERATURE,
+            beam_size=WHISPER_BEAM_SIZE,
+            best_of=WHISPER_BEST_OF,
+            compression_ratio_threshold=WHISPER_COMPRESSION_RATIO_THRESHOLD,
+            logprob_threshold=WHISPER_LOGPROB_THRESHOLD,
+            no_speech_threshold=WHISPER_NO_SPEECH_THRESHOLD,
             initial_prompt=TELUGU_INITIAL_PROMPT,
-            fp16=False,
+            fp16=WHISPER_FP16,
         )
     except Exception as exc:
         raise RuntimeError(f"Whisper transcription failed: {exc}") from exc
@@ -112,7 +123,7 @@ def _looks_like_low_quality_telugu(segments: list[dict[str, Any]]) -> bool:
 
 def transcribe_audio(
     wav_path: str,
-    model_name: str = DEFAULT_MODEL,
+    model_name: str = WHISPER_DEFAULT_MODEL,
 ) -> List[Dict[str, Any]]:
     """
     Transcribe a WAV file containing Telugu speech using Whisper.
@@ -123,9 +134,9 @@ def transcribe_audio(
     result = _run_transcription(model_name, wav_path)
     sentence_segments = _build_sentence_segments(result)
 
-    if model_name != "large-v3" and _looks_like_low_quality_telugu(sentence_segments):
-        print("[Transcription] Telugu output still looks weak. Retrying with 'large-v3'...")
-        result = _run_transcription("large-v3", wav_path)
+    if model_name != WHISPER_FALLBACK_MODEL and _looks_like_low_quality_telugu(sentence_segments):
+        print(f"[Transcription] Telugu output still looks weak. Retrying with '{WHISPER_FALLBACK_MODEL}'...")
+        result = _run_transcription(WHISPER_FALLBACK_MODEL, wav_path)
         sentence_segments = _build_sentence_segments(result)
 
     print(f"[Transcription] Produced {len(sentence_segments)} sentence-level segment(s).")

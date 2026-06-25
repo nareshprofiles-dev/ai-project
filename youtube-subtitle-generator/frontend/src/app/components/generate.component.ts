@@ -61,22 +61,7 @@ export class GenerateComponent {
     );
 
     try {
-      const response = await fetch("http://localhost:8000/api/review-units/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: this.url.trim(),
-          model: this.model,
-          output_dir: this.outputDir.trim() || "output",
-        }),
-      });
-
-      const data = (await response.json()) as ReviewUnitsResponse;
-      if (!response.ok) {
-        this.error = data.error || "Failed to generate review units.";
-        this.store.setStatus("");
-        return;
-      }
+      const data = await this.fetchReviewUnits();
 
       this.store.setRequest(this.url.trim(), this.model, this.outputDir.trim() || "output");
       this.store.setReviewRows(
@@ -100,5 +85,37 @@ export class GenerateComponent {
     } finally {
       this.isLoading = false;
     }
+  }
+
+  private async fetchReviewUnits(attempt = 1): Promise<ReviewUnitsResponse> {
+    const body = JSON.stringify({
+      url: this.url.trim(),
+      model: this.model,
+      output_dir: this.outputDir.trim() || "output",
+    });
+
+    let response: Response;
+    try {
+      response = await fetch("http://localhost:8000/api/review-units/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      });
+    } catch (networkErr) {
+      // Connection dropped mid-request (broken pipe / TCP timeout).
+      // The server may have finished and cached results, so retry once.
+      if (attempt === 1) {
+        this.store.setStatus("Connection dropped — retrying (results may be cached)...");
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        return this.fetchReviewUnits(2);
+      }
+      throw networkErr;
+    }
+
+    const data = (await response.json()) as ReviewUnitsResponse;
+    if (!response.ok) {
+      throw new Error(data.error || "Failed to generate review units.");
+    }
+    return data;
   }
 }

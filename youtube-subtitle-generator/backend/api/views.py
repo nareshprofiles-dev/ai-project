@@ -20,6 +20,7 @@ PROJECT_ROOT = BASE_DIR.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.config import CACHE_DIRNAME, DEFAULT_OUTPUT_DIR, WHISPER_DEFAULT_MODEL
 from app.services.youtube_downloader import download_audio
 from app.services.segment_utils import normalize_segment_text, split_segments_by_sentence
 from app.services.transcription_service import transcribe_audio
@@ -37,8 +38,8 @@ REQUEST_CACHE_FILENAME = "request_cache.json"
 TRANSCRIPTION_CACHE_FILENAME = "transcription_segments.json"
 TRANSLATION_CACHE_FILENAME = "translation_segments.json"
 REVIEW_ROWS_CACHE_FILENAME = "review_rows.json"
-CACHE_DIRNAME = "cache"
 TRANSCRIPTION_CACHE_VERSION = 3
+REVIEW_ROWS_CACHE_VERSION = 2
 TELUGU_CHAR_PATTERN = re.compile(r"[ఀ-౿]")
 
 
@@ -126,7 +127,7 @@ def _request_signature(youtube_url: str, model_name: str) -> dict[str, str]:
 
 
 def _cache_root_dir() -> str:
-    return str(PROJECT_ROOT / CACHE_DIRNAME)
+    return str(PROJECT_ROOT / CACHE_DIRNAME)  # CACHE_DIRNAME loaded from .env via app.config
 
 
 def _cache_key(youtube_url: str, model_name: str) -> str:
@@ -364,6 +365,8 @@ def _load_cached_review_rows(
         return None
     if cache_data.get("request") != _request_signature(youtube_url, model_name):
         return None
+    if cache_data.get("review_rows_cache_version") != REVIEW_ROWS_CACHE_VERSION:
+        return None
 
     rows_data = _read_json_file(_review_rows_cache_path(cache_dir))
     if not isinstance(rows_data, list) or not rows_data:
@@ -379,6 +382,13 @@ def _save_review_rows_cache(
 ) -> None:
     _write_json_file(_review_rows_cache_path(cache_dir), rows)
     print(f"[Cache] Saved review rows cache with {len(rows)} row(s).")
+
+    # Stamp the version into the request cache so future loads can validate it
+    cache_path = _request_cache_path(cache_dir)
+    existing = _read_json_file(cache_path)
+    if isinstance(existing, dict):
+        existing["review_rows_cache_version"] = REVIEW_ROWS_CACHE_VERSION
+        _write_json_file(cache_path, existing)
 
 
 # ---------------------------------------------------------------------------
@@ -481,8 +491,8 @@ def transcribe_audio_only(request: HttpRequest) -> JsonResponse:
     payload = _parse_json(request)
 
     youtube_url = payload.get("url", "").strip()
-    model_name = payload.get("model", "medium").strip()
-    output_dir = _normalize_output_dir(payload.get("output_dir", "output"))
+    model_name = payload.get("model", WHISPER_DEFAULT_MODEL).strip()
+    output_dir = _normalize_output_dir(payload.get("output_dir", DEFAULT_OUTPUT_DIR))
 
     if not youtube_url:
         return JsonResponse({"error": "Missing 'url'."}, status=400)
@@ -516,8 +526,8 @@ def translate_segments_only(request: HttpRequest) -> JsonResponse:
     payload = _parse_json(request)
 
     youtube_url = payload.get("url", "").strip()
-    model_name = payload.get("model", "medium").strip()
-    output_dir = _normalize_output_dir(payload.get("output_dir", "output"))
+    model_name = payload.get("model", WHISPER_DEFAULT_MODEL).strip()
+    output_dir = _normalize_output_dir(payload.get("output_dir", DEFAULT_OUTPUT_DIR))
     segments = _coerce_segments(payload.get("segments", []))
 
     if not segments:
@@ -551,8 +561,8 @@ def generate_subtitles(request: HttpRequest) -> JsonResponse:
     payload = _parse_json(request)
 
     youtube_url = payload.get("url", "").strip()
-    model_name = payload.get("model", "medium").strip()
-    output_dir = _normalize_output_dir(payload.get("output_dir", "output"))
+    model_name = payload.get("model", WHISPER_DEFAULT_MODEL).strip()
+    output_dir = _normalize_output_dir(payload.get("output_dir", DEFAULT_OUTPUT_DIR))
 
     if not youtube_url:
         return JsonResponse({"error": "Missing 'url'."}, status=400)
@@ -572,7 +582,13 @@ def generate_subtitles(request: HttpRequest) -> JsonResponse:
             wav_path=wav_path,
             model_name=model_name,
         )
-        srt_path = generate_srt(translated_segments, output_dir=output_dir)
+        rows = build_review_rows(transcription_segments, translated_segments)
+        srt_segments = [
+            {"start": r["start"], "end": r["end"], "english_text": r["english_current"]}
+            for r in rows
+            if r.get("english_current", "").strip()
+        ]
+        srt_path = generate_srt(srt_segments, output_dir=output_dir)
         _save_request_cache(
             youtube_url=youtube_url,
             model_name=model_name,
