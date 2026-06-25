@@ -1,3 +1,6 @@
+# Environment config (copy .env.example to .env and edit locally)
+.env
+
 # Python
 __pycache__/
 *.pyc

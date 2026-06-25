@@ -67,7 +67,8 @@ textarea {
 
 textarea {
   min-height: 180px;
-  font-family: "Consolas", "Courier New", monospace;
+  font-family: "Noto Sans Telugu", "Hind Guntur", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  line-height: 1.6;
 }
 
 .actions {

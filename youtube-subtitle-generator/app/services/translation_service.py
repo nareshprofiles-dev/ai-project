@@ -1,56 +1,56 @@
 """
 translation_service.py
 ----------------------
-Translates Telugu transcription segments to English using Whisper's built-in
-translation task — no separate model download required.
+Translates Telugu audio to English using Whisper's built-in translate task.
 
-Whisper's `task="translate"` runs the already-downloaded model a second time
-on the audio file and returns English text with segment timestamps.
-When the translate pass produces richer segmentation than the transcription
-pass, we prefer the translated segments directly so the final SRT keeps all
-available subtitle cues.
+Returns raw Whisper translate segments (timestamps + english_text).
+Alignment with transcription segments is handled downstream by
+review_unit_builder, which uses transcription timestamps as canonical.
 """
 
 from typing import List, Dict, Any
 
 import whisper
 
+from app.config import (
+    WHISPER_BEAM_SIZE,
+    WHISPER_BEST_OF,
+    WHISPER_COMPRESSION_RATIO_THRESHOLD,
+    WHISPER_DEFAULT_MODEL,
+    WHISPER_FP16,
+    WHISPER_LANGUAGE,
+    WHISPER_LOGPROB_THRESHOLD,
+    WHISPER_NO_SPEECH_THRESHOLD,
+    WHISPER_TEMPERATURE,
+)
+
 
 def translate_segments(
     segments: List[Dict[str, Any]],
     wav_path: str = "",
-    model_name: str = "small",
+    model_name: str = WHISPER_DEFAULT_MODEL,
 ) -> List[Dict[str, Any]]:
     """
-    Translate Telugu segments to English using Whisper's translate task.
-
-    Whisper is re-run on the same audio file with task="translate", which
-    produces English text for each segment. If that translate pass yields
-    enough segments, those translated segments become the subtitle source.
-    Otherwise we fall back to aligning translated text onto the original
-    transcription segments by index.
+    Run Whisper's translate task and return English segments.
 
     Args:
-        segments:   List of segment dicts from transcription_service, each with
-                    {"id", "start", "end", "text"}.
-        wav_path:   Path to the original WAV file (needed for Whisper translate).
-        model_name: Whisper model size to reuse (must match transcription model).
+        segments:   Transcription segments (used only to check for empty input).
+        wav_path:   Path to the original WAV file.
+        model_name: Whisper model size (must match the transcription model).
 
     Returns:
-        A segment list ready for SRT generation, each containing timestamps and
-        an "english_text" field.
+        List of dicts with {"id", "start", "end", "english_text"} from the
+        translate pass.  Empty list if wav_path is missing or Whisper returns
+        nothing.  Never contains Telugu text — alignment is left to the caller.
 
     Raises:
         RuntimeError: If Whisper translation fails.
     """
     if not segments:
-        return segments
+        return []
 
     if not wav_path:
-        # Fallback: keep Telugu text as-is if no audio path provided
-        for seg in segments:
-            seg["english_text"] = seg.get("text", "")
-        return segments
+        return []
 
     print(f"[Translation] Running Whisper translate pass (Telugu -> English) ...")
     print(f"  Model: '{model_name}' | Audio: {wav_path}")
@@ -60,10 +60,17 @@ def translate_segments(
 
         result = model.transcribe(
             wav_path,
-            language="te",       # source language: Telugu
-            task="translate",    # translate directly to English
+            language=WHISPER_LANGUAGE,
+            task="translate",
             verbose=False,
-            fp16=False,
+            condition_on_previous_text=False,
+            temperature=WHISPER_TEMPERATURE,
+            beam_size=WHISPER_BEAM_SIZE,
+            best_of=WHISPER_BEST_OF,
+            compression_ratio_threshold=WHISPER_COMPRESSION_RATIO_THRESHOLD,
+            logprob_threshold=WHISPER_LOGPROB_THRESHOLD,
+            no_speech_threshold=WHISPER_NO_SPEECH_THRESHOLD,
+            fp16=WHISPER_FP16,
         )
     except Exception as exc:
         raise RuntimeError(f"Whisper translation pass failed: {exc}") from exc
@@ -79,24 +86,9 @@ def translate_segments(
                 "id": int(seg.get("id", index)),
                 "start": float(seg["start"]),
                 "end": float(seg["end"]),
-                "text": segments[index]["text"] if index < len(segments) else "",
                 "english_text": english_text,
             }
         )
 
     print(f"[Translation] Received {len(translated_segments)} English segment(s).")
-
-    if len(translated_segments) >= len(segments):
-        print("[Translation] Using translated segment timestamps directly.")
-        return translated_segments
-
-    # Align English text to Telugu segments by index (best-effort)
-    for i, seg in enumerate(segments):
-        if i < len(translated_segments):
-            seg["english_text"] = translated_segments[i]["english_text"]
-        else:
-            # Fallback: keep Telugu text if no matching English segment
-            seg["english_text"] = seg.get("text", "")
-
-    print("[Translation] Translation complete.")
-    return segments
+    return translated_segments

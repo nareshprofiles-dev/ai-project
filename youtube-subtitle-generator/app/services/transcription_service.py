@@ -2,88 +2,142 @@
 transcription_service.py
 ------------------------
 Transcribes Telugu audio (WAV) to Telugu text using OpenAI Whisper
-running entirely on the local machine — no API keys required.
+running entirely on the local machine.
 
 Whisper returns word-level or segment-level timestamps that we preserve
 so the subtitle generator can build accurate SRT cues later.
 """
 
 import os
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 import whisper
 
+from app.config import (
+    WHISPER_BEAM_SIZE,
+    WHISPER_BEST_OF,
+    WHISPER_COMPRESSION_RATIO_THRESHOLD,
+    WHISPER_DEFAULT_MODEL,
+    WHISPER_FALLBACK_MODEL,
+    WHISPER_FP16,
+    WHISPER_LANGUAGE,
+    WHISPER_LOGPROB_THRESHOLD,
+    WHISPER_NO_SPEECH_THRESHOLD,
+    WHISPER_TEMPERATURE,
+)
+from app.services.segment_utils import (
+    normalize_segment_text,
+    split_segments_by_sentence,
+    split_word_timestamps_into_segments,
+)
 
-# Default Whisper model size. "medium" gives a good balance between
-# accuracy and speed for Telugu. Use "large-v3" for best accuracy.
-DEFAULT_MODEL = "medium"
+
+TELUGU_INITIAL_PROMPT = (
+    "ఇది తెలుగు ఆడియో. స్పష్టమైన తెలుగు పదాలు, వాక్యాలు, విరామ చిహ్నాలతో ఖచ్చితంగా లిప్యంతరీకరణ చేయండి."
+)
 
 
-def transcribe_audio(
-    wav_path: str,
-    model_name: str = DEFAULT_MODEL,
-) -> List[Dict[str, Any]]:
-    """
-    Transcribe a WAV file containing Telugu speech using Whisper.
-
-    Whisper auto-detects the language, but we explicitly hint "te" (Telugu)
-    to improve accuracy and avoid misdetection for short clips.
-
-    Args:
-        wav_path:   Path to the 16kHz mono WAV file.
-        model_name: Whisper model to use ("tiny", "base", "small",
-                    "medium", "large", "large-v2", "large-v3").
-
-    Returns:
-        A list of segment dicts, each containing:
-          {
-            "id":    int,         # segment index (0-based)
-            "start": float,       # start time in seconds
-            "end":   float,       # end time in seconds
-            "text":  str,         # transcribed Telugu text for this segment
-          }
-
-    Raises:
-        FileNotFoundError: If wav_path does not exist.
-        RuntimeError:      If Whisper transcription fails.
-    """
-    if not os.path.exists(wav_path):
-        raise FileNotFoundError(f"WAV file not found: {wav_path}")
-
+def _run_transcription(model_name: str, wav_path: str) -> dict[str, Any]:
     print(f"[Transcription] Loading Whisper model: '{model_name}' ...")
-    print("  (First run will download the model weights — this may take a moment.)")
+    print("  (First run will download the model weights; this may take a moment.)")
+    print(f"[Transcription] Transcribing: {wav_path}")
+    print("  Language hint: Telugu (te)")
 
     try:
         model = whisper.load_model(model_name)
     except Exception as exc:
         raise RuntimeError(f"Failed to load Whisper model '{model_name}': {exc}") from exc
 
-    print(f"[Transcription] Transcribing: {wav_path}")
-    print("  Language hint: Telugu (te)")
-
     try:
-        result = model.transcribe(
+        return model.transcribe(
             wav_path,
-            language="te",          # Telugu ISO-639-1 code
-            task="transcribe",      # 'transcribe' keeps source language; 'translate' → English
+            language=WHISPER_LANGUAGE,
+            task="transcribe",
             verbose=False,
-            # fp16=False forces CPU-safe float32 inference; remove if you have a GPU
-            fp16=False,
+            word_timestamps=True,
+            condition_on_previous_text=False,
+            temperature=WHISPER_TEMPERATURE,
+            beam_size=WHISPER_BEAM_SIZE,
+            best_of=WHISPER_BEST_OF,
+            compression_ratio_threshold=WHISPER_COMPRESSION_RATIO_THRESHOLD,
+            logprob_threshold=WHISPER_LOGPROB_THRESHOLD,
+            no_speech_threshold=WHISPER_NO_SPEECH_THRESHOLD,
+            initial_prompt=TELUGU_INITIAL_PROMPT,
+            fp16=WHISPER_FP16,
         )
     except Exception as exc:
         raise RuntimeError(f"Whisper transcription failed: {exc}") from exc
 
-    # Extract segment-level data (each segment ≈ one subtitle cue)
+
+def _build_sentence_segments(result: dict[str, Any]) -> list[dict[str, Any]]:
     segments: List[Dict[str, Any]] = [
         {
-            "id": seg["id"],
-            "start": seg["start"],
-            "end": seg["end"],
-            "text": seg["text"].strip(),
+            "id": int(seg.get("id", index)),
+            "start": float(seg.get("start", 0.0)),
+            "end": float(seg.get("end", 0.0)),
+            "text": normalize_segment_text(seg.get("text", "")),
         }
-        for seg in result.get("segments", [])
-        if seg["text"].strip()  # skip empty segments
+        for index, seg in enumerate(result.get("segments", []))
+        if normalize_segment_text(seg.get("text", ""))
     ]
 
-    print(f"[Transcription] Produced {len(segments)} segment(s).")
-    return segments
+    word_timestamps: List[Dict[str, Any]] = []
+    for seg in result.get("segments", []):
+        for word in seg.get("words", []):
+            word_timestamps.append(
+                {
+                    "text": word.get("word", ""),
+                    "start": word.get("start", seg.get("start", 0.0)),
+                    "end": word.get("end", seg.get("end", 0.0)),
+                }
+            )
+
+    sentence_segments = split_word_timestamps_into_segments(word_timestamps, segments)
+    if not sentence_segments:
+        sentence_segments = split_segments_by_sentence(segments)
+
+    return sentence_segments
+
+
+def _looks_like_low_quality_telugu(segments: list[dict[str, Any]]) -> bool:
+    if not segments:
+        return True
+
+    total_chars = 0
+    telugu_chars = 0
+    short_segments = 0
+
+    for segment in segments:
+        text = normalize_segment_text(segment.get("text", ""))
+        total_chars += len(text)
+        telugu_chars += sum(1 for char in text if "\u0C00" <= char <= "\u0C7F")
+        if len(text) < 8:
+            short_segments += 1
+
+    if total_chars == 0:
+        return True
+
+    telugu_ratio = telugu_chars / total_chars
+    return telugu_ratio < 0.45 or short_segments >= max(2, len(segments) // 2)
+
+
+def transcribe_audio(
+    wav_path: str,
+    model_name: str = WHISPER_DEFAULT_MODEL,
+) -> List[Dict[str, Any]]:
+    """
+    Transcribe a WAV file containing Telugu speech using Whisper.
+    """
+    if not os.path.exists(wav_path):
+        raise FileNotFoundError(f"WAV file not found: {wav_path}")
+
+    result = _run_transcription(model_name, wav_path)
+    sentence_segments = _build_sentence_segments(result)
+
+    if model_name != WHISPER_FALLBACK_MODEL and _looks_like_low_quality_telugu(sentence_segments):
+        print(f"[Transcription] Telugu output still looks weak. Retrying with '{WHISPER_FALLBACK_MODEL}'...")
+        result = _run_transcription(WHISPER_FALLBACK_MODEL, wav_path)
+        sentence_segments = _build_sentence_segments(result)
+
+    print(f"[Transcription] Produced {len(sentence_segments)} sentence-level segment(s).")
+    return sentence_segments
